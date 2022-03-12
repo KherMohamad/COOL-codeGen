@@ -1,0 +1,351 @@
+
+program(primitives, classes, objects, methods) ::= <<
+.data
+    .align	2
+    .globl	class_nameTab
+    .globl	Int_protObj
+    .globl	String_protObj
+    .globl	bool_const0
+    .globl	bool_const1
+    .globl	Main_protObj
+    .globl	_int_tag
+    .globl	_string_tag
+    .globl	_bool_tag
+
+<primitives>
+
+class_nameTab:
+<classes>
+
+class_objTab:
+<objects>
+
+heap_start:
+    .word	0
+
+.text
+    .globl	Int_init
+    .globl	String_init
+    .globl	Bool_init
+    .globl	Main_init
+    .globl	Main.main
+
+<methods>
+>>
+primaryLabel(name, tag) ::= <<
+_<name>_tag:
+	.word	<tag>
+>>
+bool_constants(label) ::= <<
+bool_const0:
+    .word	<label>
+    .word	4
+    .word	Bool_dispTab
+    .word	0
+bool_const1:
+    .word	<label>
+    .word	4
+    .word	Bool_dispTab
+    .word	1
+>>
+objectInit(class, parent, attributes) ::= <<
+<class>_init:
+	addiu	$sp $sp -12
+	sw		$fp 12($sp)
+	sw		$s0 8($sp)
+	sw		$ra 4($sp)
+	addiu	$fp $sp 4
+	move	$s0 $a0
+	jal		<parent>_init
+<attributes>
+	move	$a0 $s0
+	lw		$fp 12($sp)
+	lw		$s0 8($sp)
+	lw		$ra 4($sp)
+	addiu	$sp $sp 12
+	jr		$ra
+>>
+objectInitNoParent(class, attributes) ::= <<
+<class>_init:
+	addiu	$sp $sp -12
+	sw		$fp 12($sp)
+	sw		$s0 8($sp)
+	sw		$ra 4($sp)
+	addiu	$fp $sp 4
+	move	$s0 $a0
+<attributes>
+	move	$a0 $s0
+	lw		$fp 12($sp)
+	lw		$s0 8($sp)
+	lw		$ra 4($sp)
+	addiu	$sp $sp 12
+	jr		$ra
+>>
+
+objectTabField(class) ::= <<
+	.word	<class>_protObj
+	.word	<class>_init
+>>
+
+protObj(class, tag, words, attributes) ::= <<
+<class>_protObj:
+    .word	<tag>
+    .word	<words>
+    .word	<class>_dispTab
+<attributes>
+>>
+
+dispatchTableEntry(method) ::= <<
+	.word	<method>
+>>
+
+dispatchTable(class, methods) ::= <<
+<class>_dispTab:
+<methods>
+>>
+
+intConstant(val, tag) ::= <<
+int_const<val>:
+	.word	<tag>
+	.word	4
+	.word	Int_dispTab
+	.word	<val>
+>>
+
+stringConstant(label, tag, str, len, wordCount) ::= <<
+str_const<label>:
+	.word	<tag>
+	.word	<wordCount>
+	.word	String_dispTab
+	.word	<len>
+	.asciiz	"<str>"
+	.align	2
+>>
+
+method(name, body, offset) ::= <<
+<name>:
+	addiu	$sp $sp -12
+	sw		$fp 12($sp)
+	sw		$s0 8($sp)
+	sw		$ra 4($sp)
+	addiu	$fp $sp 4
+	move	$s0 $a0
+<body>
+	lw		$fp 12($sp)
+	lw		$s0 8($sp)
+	lw		$ra 4($sp)
+	addiu	$sp $sp <offset>
+	jr		$ra
+>>
+
+literal(addr) ::= <<
+	la		$a0 <addr>
+>>
+
+dispatchStatic(method, idx, path, line, explicit, specific, params, offset) ::= <<
+<params>
+<explicit>
+	bnez    $a0 dispatch_<method>_<idx>
+	la      $a0 <path>
+	li      $t1 <line>
+	jal     _dispatch_abort
+dispatch_<method>_<idx>:
+<specific>
+    lw      $t1 <offset>($t1)
+    jalr    $t1
+>>
+
+dispatchDynamic(method, idx, path, line, specific, params, offset) ::= <<
+<params>
+	move    $a0 $s0
+	bnez    $a0 dispatch_<method>_<idx>
+    la      $a0 <path>
+    li      $t1 <line>
+    jal     _dispatch_abort
+    dispatch_<method>_<idx>:
+<specific>
+        lw      $t1 <offset>($t1)
+        jalr    $t1
+    >>
+specificCallerDispatch(specific) ::= <<
+    la		$t1 <specific>_dispTab
+    >>
+generalCallerDispatch() ::= <<
+    lw      $t1 8($a0)
+    >>
+
+
+
+attribute(offset) ::= <<
+	lw      $a0 <offset>($s0)
+>>
+
+dispatchParam(param) ::= <<
+<param>
+	sw      $a0 0($sp)
+	addiu   $sp $sp -4
+>>
+
+storeAttribute(val, offset) ::= <<
+<val>
+	sw      $a0 <offset>($s0)
+>>
+
+loadVar(offset) ::= <<
+	lw		$a0 <offset>($fp)
+>>
+
+storeVar(val, offset) ::= <<
+<val>
+	sw		$a0 <offset>($fp)
+>>
+
+initLet(space) ::= <<
+	addiu	$sp $sp <space>
+>>
+
+new(type) ::= <<
+	la		$a0 <type>_protObj
+	jal		Object.copy
+	jal		<type>_init
+>>
+
+newSelfType() ::= <<
+	la		$t1 class_objTab
+	lw		$t2 0($s0)
+	li      $t3 8
+	mult	$t2 $t3
+	mflo    $t2
+	add 	$t1 $t1 $t2
+	sw		$t1 0($sp)
+	addiu	$sp $sp -4
+	lw		$a0 0($t1)
+	jal		Object.copy
+	lw		$t1 4($sp)
+	addiu	$sp $sp 4
+	lw		$t1 4($t1)
+	jalr	$t1
+>>
+
+if(cond, then, els, labelCounter) ::= <<
+<cond>
+	lw		$t1 12($a0)
+    beqz	$t1 else_<labelCounter>
+<then>
+    b		endif_<labelCounter>
+else_<labelCounter>:
+<els>
+endif_<labelCounter>:
+>>
+
+isvoid(expr, labelCounter) ::= <<
+<expr>
+    move	$t1 $a0
+    la		$a0 bool_const1
+    beqz	$t1 isvoid_<labelCounter>
+    la		$a0 bool_const0
+isvoid_<labelCounter>:
+>>
+
+not(expr, labelCounter) ::= <<
+<expr>
+	lw		$t1 12($a0)
+	la		$a0 bool_const1
+	beqz	$t1 not_<labelCounter>
+	la		$a0 bool_const0
+not_<labelCounter>:
+>>
+
+neg(expr) ::= <<
+<expr>
+	lw		$t1 12($a0)
+	neg		$t1 $t1
+	sw		$t1 12($a0)
+>>
+
+arithm(leftOp, rightOp, op) ::= <<
+<leftOp>
+	sw		$a0 0($sp)
+	addiu	$sp $sp -4
+<rightOp>
+	jal		Object.copy
+	lw		$t1 4($sp)
+	addiu	$sp $sp 4
+	lw		$t1 12($t1)
+	lw		$t2 12($a0)
+	<op>	$t1 $t1 $t2
+	sw		$t1 12($a0)
+>>
+
+equal(leftOp, rightOp, labelCounter) ::= <<
+<leftOp>
+	sw		$a0 0($sp)
+	addiu	$sp $sp -4
+<rightOp>
+	lw		$t1 4($sp)
+	addiu	$sp $sp 4
+	move	$t2 $a0
+	la		$a0 bool_const1
+	beq		$t1 $t2 eq_<labelCounter>
+	la		$a1 bool_const0
+	jal		equality_test
+eq_<labelCounter>:
+>>
+
+cmp(leftOp, rightOp, op, labelCounter) ::= <<
+<leftOp>
+	sw		$a0 0($sp)
+	addiu	$sp $sp -4
+<rightOp>
+	lw		$t1 4($sp)
+	addiu	$sp $sp 4
+	lw		$t1 12($t1)
+	lw		$t2 12($a0)
+	la		$a0 bool_const1
+	<op>	$t1 $t2 compare_<labelCounter>
+	la		$a0 bool_const0
+compare_<labelCounter>:
+>>
+
+while(cond, body, labelCounter) ::= <<
+while_<labelCounter>:
+<cond>
+	lw		$t1 12($a0)
+	beqz	$t1 end_while_<labelCounter>
+<body>
+	b		while_<labelCounter>
+end_while_<labelCounter>:
+	li		$a0 0
+>>
+
+case(expr, branches, path, line, labelCounter) ::= <<
+	addiu	$sp $sp -4
+	move	$s0 $a0
+<expr>
+	bnez    $a0 case_<labelCounter>
+	la      $a0 <path>
+	li      $t1 <line>
+	jal     _case_abort2
+case_<labelCounter>:
+	sw		$a0 -4($fp)
+	lw		$t1 0($a0)
+<branches>
+	lw		$a0 -4($fp)
+	jal		_case_abort
+end_case_<labelCounter>:
+	addiu	$sp $sp 4
+>>
+
+caseBranch(expr, smallTag, bigTag, esacCounter, caseCounter) ::= <<
+	blt		$t1 <smallTag> case_branch_<caseCounter>
+	bgt     $t1 <bigTag> case_branch_<caseCounter>
+<expr>
+	b		end_case_<esacCounter>
+case_branch_<caseCounter>:
+>>
+
+self() ::= <<
+	move	$a0 $s0
+>>
+
+sequence(e) ::= "<e; separator=\"\n\">"
